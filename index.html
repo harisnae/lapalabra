@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Basic meta tags for character set and responsive design -->
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=0">
+  <title>La Palabra — Spanish Word Guessing Game</title>
+  <meta name="theme-color" content="#F2ECDF">
+  <!-- Preconnect to Google Fonts for performance optimization -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <!-- Load custom fonts: Fraunces for display and Space Grotesk for UI -->
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,900&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Paper grain texture overlay for aesthetic effect -->
+<div class="grain" aria-hidden="true"></div>
+
+<!-- START SCREEN - Initial screen where users choose word length -->
+<section id="screen-start" class="screen active">
+  <header class="masthead">
+    <!-- Game description in Spanish and English -->
+    <p class="overline">Un juego de palabras en español · A Spanish word game</p>
+    <!-- Game title with special styling for visual appeal -->
+    <div class="title-container">
+      <h1 class="title">LA<span class="hollow">PALABRA</span><i class="period">.</i></h1>
+    </div>
+    <!-- Demo animation showing how the game works -->
+    <div class="demo-container">
+      <div class="demo" aria-hidden="true">
+        <div class="tile tile-demo fixed"><span class="letter">E</span></div>
+        <div class="tile tile-demo fixed tilt1"><span class="letter">S</span></div>
+        <div class="tile tile-demo anim" style="--i:0"><span class="letter">P</span></div>
+        <div class="tile tile-demo anim" style="--i:1"><span class="letter">A</span></div>
+        <div class="tile tile-demo anim" style="--i:2"><span class="letter">Ñ</span></div>
+        <div class="tile tile-demo anim" style="--i:3"><span class="letter">O</span></div>
+        <div class="tile tile-demo fixed tilt2"><span class="letter">L</span></div>
+      </div>
+    </div>
+    <!-- Game instructions -->
+    <p class="lede">Hidden Spanish words, set letter by letter. Pick your letters carefully — every miss costs a try.</p>
+  </header>
+
+  <!-- Word length selection interface -->
+  <div class="picker">
+    <p class="picker-label">Choose a word length</p>
+    <div class="opts">
+      <!-- 5-letter word option with difficulty info -->
+      <button class="opt" data-len="5">
+        <span class="opt-num">5</span>
+        <span class="opt-info"><span class="opt-title">LETTERS</span><span class="opt-sub">3 wrong guesses allowed</span></span>
+        <span class="opt-preview" aria-hidden="true"><i></i><i class="f"></i><i></i><i></i><i></i></span>
+        <span class="opt-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+      <!-- 6-letter word option -->
+      <button class="opt" data-len="6">
+        <span class="opt-num">6</span>
+        <span class="opt-info"><span class="opt-title">LETTERS</span><span class="opt-sub">4 wrong guesses allowed</span></span>
+        <span class="opt-preview" aria-hidden="true"><i></i><i class="f"></i><i></i><i></i><i class="f"></i><i></i></span>
+        <span class="opt-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+      <!-- 7-letter word option -->
+      <button class="opt" data-len="7">
+        <span class="opt-num">7</span>
+        <span class="opt-info"><span class="opt-title">LETTERS</span><span class="opt-sub">4 wrong guesses allowed</span></span>
+        <span class="opt-preview" aria-hidden="true"><i></i><i class="f"></i><i></i><i></i><i class="f"></i><i></i><i class="f"></i></span>
+        <span class="opt-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+      <!-- 8+ letter word option -->
+      <button class="opt" data-len="8">
+        <span class="opt-num">8</span>
+        <span class="opt-info"><span class="opt-title">LETTERS+</span><span class="opt-sub">4 wrong guesses allowed</span></span>
+        <span class="opt-preview" aria-hidden="true"><i></i><i class="f"></i><i></i><i></i><i class="f"></i><i></i><i class="f"></i><i></i></span>
+        <span class="opt-arrow" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </span>
+      </button>
+    </div>
+    <!-- Random word length option -->
+    <button class="random-btn" id="randomBtn">Feeling lucky? <span>Random length</span></button>
+  </div>
+
+  <!-- Footer with keyboard tip -->
+  <footer class="start-foot">
+    <p>Tip: your physical keyboard works too - Ñ and accents included.</p>
+  </footer>
+</section>
+
+<!-- GAME SCREEN - Main game interface -->
+<section id="screen-game" class="screen">
+  <!-- Top navigation bar -->
+  <header class="topbar">
+    <!-- Back button to return to start screen -->
+    <button id="backBtn" class="icon-btn" aria-label="Choose length">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+    </button>
+    <!-- Game title -->
+    <span class="wordmark">LAPALABRA</span>
+    <span class="top-right">
+      <!-- Score display -->
+      <span class="chip" id="scoreChip">SCORE 0</span>
+      <!-- Sound toggle button -->
+      <button id="soundBtn" class="icon-btn" aria-label="Toggle sound">
+        <svg id="iconSoundOn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12"/></svg>
+        <svg id="iconSoundOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M11 5 6 9H3v6h3l5 4V5z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>
+      </button>
+    </span>
+  </header>
+
+  <!-- Game status indicators -->
+  <div class="status">
+    <span class="badge" id="lenBadge">6 LETTERS</span>
+    <div class="tries">
+      <span class="tries-label">TRIES</span>
+      <span class="dots" id="dots"></span>
+    </div>
+  </div>
+
+  <!-- Main game area -->
+  <main class="stage" id="stage">
+    <div class="tiles-wrap">
+      <!-- Word tiles will be generated here -->
+      <div class="tiles" id="tiles"></div>
+      <!-- Stamp for win/lose indication -->
+      <div class="stamp" id="stamp" hidden></div>
+    </div>
+    <!-- Game messages -->
+    <p class="message" id="message"></p>
+  </main>
+
+  <!-- Bottom area with game results -->
+  <div class="below" id="below">
+    <div id="resultPanel" class="result" hidden>
+      <div class="result-actions">
+        <!-- Next word button -->
+        <button id="nextBtn" class="btn btn-primary">
+          Next word <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- On-screen keyboard -->
+  <div class="keyboard" id="keyboard"></div>
+</section>
+
+<!-- Load the game script -->
+<script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,1390 @@
+/* ============================================================
+   LAPALABRA — LETTERPRESS WORD GAME
+   ============================================================
+
+   THEME IN A NUTSHELL
+   -------------------
+   The design imitates an old print shop:
+     • "Paper" — warm cream backgrounds
+     • "Ink"   — near-black text, tiles and borders
+     • Stamps  — hard offset shadows (zero blur) that make
+                 elements look physically pressed onto paper
+     • Red     — used like a rubber stamp / editor's pen
+     • Grain   — a faint noise texture laid over everything
+
+   FILE MAP
+   --------
+     1. Design tokens (colour / font variables)
+     2. Global reset & base styles
+     3. Paper-grain texture overlay
+     4. Screen show/hide system
+     5. Start screen (title, animated demo, difficulty picker)
+     6. Shared components (letter tiles, buttons)
+     7. Game screen (top bar, status, board, keyboard)
+     8. One-off effect animations (shake, confetti, …)
+     9. Responsive rules (@media + @container queries)
+
+   CSS TECHNIQUES USED (explained where they first appear)
+   -------------------------------------------------------
+     • CSS custom properties (--name)  → reusable variables
+     • clamp(min, ideal, max)          → fluid sizing with limits
+     • calc()                          → maths with CSS values
+     • @keyframes                      → reusable animations
+     • ::before / ::after              → generated decorations
+     • @container queries              → respond to a PARENT's
+                                         width, not the window's
+   ============================================================ */
+
+
+/* ============================================================
+   1. DESIGN TOKENS
+   ------------------------------------------------------------
+   Custom properties set on :root (the <html> element) are
+   inherited by every element on the page, so they act like
+   global variables. Change a value here and the whole theme
+   updates everywhere at once.
+   ============================================================ */
+:root{
+  /* --- Paper (background) colours --- */
+  --paper:   #F2ECDF;              /* main warm cream background                      */
+  --paper-2: #EAE1CC;              /* slightly darker paper, used for panels (result card) */
+
+  /* --- Ink (foreground) colours ---
+     The solid ink is reused at several opacities to create
+     softer "faded ink" shades for secondary text and hairlines. */
+  --ink:     #1C1712;              /* near-black, slightly warm                       */
+  --ink-70:  rgba(28,23,18,.72);   /* 70% ink — secondary text                        */
+  --ink-45:  rgba(28,23,18,.45);   /* 45% ink — muted footer text                     */
+  --ink-30:  rgba(28,23,18,.30);   /*  ADDED THIS LINE */
+  --ink-25:  rgba(28,23,18,.25);   /* 25% ink — hairlines, disabled shadows           */
+  --ink-12:  rgba(28,23,18,.12);   /* 12% ink — faintest tint (currently unused)      */
+
+  /* --- Accent colours --- */
+  --red:     #C13A1E;              /* letterpress red: stamps, errors, highlights     */
+  --red-soft:rgba(193,58,30,.14);  /* translucent red wash (currently unused)         */
+  --blue:    #274C99;              /* spare accent (currently unused)                 */
+  --gold:    #E0A32E;              /* spare accent (currently unused)                 */
+
+  /* --- Typography --- */
+  --f-display:'Fraunces', 'Georgia', serif;                  /* chunky serif for titles & letter tiles; Georgia is the fallback */
+  --f-ui:     'Space Grotesk', 'Helvetica Neue', sans-serif; /* clean sans-serif for all UI text                                */
+
+  /* Letter size as a fraction of tile width (0.56 = 56%).
+     Keeps glyphs proportionate no matter how big tiles get. */
+  --tile-font-ratio: 0.56;
+}
+
+
+/* ============================================================
+   2. GLOBAL RESET & BASE STYLES
+   ============================================================ */
+
+/* Universal selector — applies to EVERY element.
+   • box-sizing:border-box → padding & border are counted
+     INSIDE an element's declared width/height (predictable).
+   • margin/padding:0 → strips browser default spacing so the
+     layout starts from a clean slate. */
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+/* Stop mobile Safari from auto-enlarging text in landscape. */
+html{ -webkit-text-size-adjust:100%; }
+
+body{
+  background: var(--paper);    /* cream paper backdrop            */
+  color: var(--ink);           /* default text colour = ink       */
+  font-family: var(--f-ui);    /* default to the UI font          */
+  min-height: 100vh;           /* fill viewport (fallback)        */
+  min-height: 100dvh;          /* "dynamic viewport height" —
+                                  corrects for mobile browser
+                                  toolbars that appear/disappear  */
+  overflow-x: hidden;          /* never allow a sideways scrollbar */
+}
+
+/* Selected text is inverted: ink background, paper text. */
+::selection{ background: var(--ink); color: var(--paper); }
+
+/* Buttons do NOT inherit fonts/colours by default — this
+   forces them to match their surroundings instead of using
+   ugly browser defaults. */
+button{ font-family: inherit; color: inherit; }
+
+
+/* ============================================================
+   3. PAPER GRAIN OVERLAY
+   ------------------------------------------------------------
+   A fixed, full-screen layer sitting above everything that
+   adds a speckled paper texture. The background is an inline
+   SVG "data URI" (an entire SVG file packed into the URL):
+     • <feTurbulence> generates random fractal noise
+     • <feColorMatrix> reduces it to a very faint alpha (0.05)
+     • mix-blend-mode:multiply makes the speckles darken the
+       page beneath, like real paper fibres
+     • pointer-events:none → clicks pass straight through it
+     • z-index:60 keeps it above content but below nothing
+       interactive (it can't be clicked anyway)
+   ============================================================ */
+.grain{
+  position: fixed; inset: 0; z-index: 60; pointer-events: none;
+  mix-blend-mode: multiply; opacity: .55;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+
+/* ============================================================
+   4. SCREEN SYSTEM
+   ------------------------------------------------------------
+   The app has multiple "screens" (start, game, …) in one page.
+   Only the element with .active is displayed; it fades in and
+   slides up via the screenIn animation.
+   ============================================================ */
+.screen{ display:none; }   /* hidden by default */
+
+.screen.active{
+  display:flex;               /* visible + flex column layout        */
+  flex-direction:column;
+  min-height:100vh;           /* fallback for older browsers         */
+  min-height:100dvh;          /* full dynamic viewport height        */
+  animation: screenIn .4s cubic-bezier(.2,.7,.3,1) both;
+  /* "both" fill mode: the element holds the animation's first
+     keyframe before it starts and its last keyframe after. */
+}
+
+/* Fade in while rising 10px. The cubic-bezier() is a custom
+   easing curve: quick start, gentle settle. */
+@keyframes screenIn{ from{ opacity:0; transform: translateY(10px); } to{ opacity:1; transform:none; } }
+
+
+/* ============================================================
+   5. START SCREEN
+   ============================================================ */
+
+/* A narrow centred column (max 660px wide).
+   clamp(MIN, IDEAL, MAX) picks the middle value while it stays
+   between the bounds — e.g. side padding grows with the screen
+   but never exceeds 40px. */
+#screen-start{
+  width:100%;
+  max-width: 660px;
+  margin-inline: auto;        /* margin-left + right auto → horizontally centred */
+  padding: clamp(24px, 5vh, 56px) clamp(18px, 4.5vw, 40px) 28px;
+  justify-content: center;    /* vertically centre (parent is a flex column) */
+  text-align: center;
+}
+
+/* Small uppercase label above the title. */
+.overline{
+  font-size:11px;
+  font-weight:500;
+  letter-spacing:.24em;       /* wide letter-spacing = classy small-caps feel */
+  text-transform:uppercase;
+  color:var(--ink-70);
+}
+
+/* Wrapper that guarantees the big title is centred. */
+.title-container {
+  display: flex;
+  justify-content: center;    /* centres the inline-block title inside */
+  width: 100%;
+  margin-top: 14px;
+}
+
+/* The giant WORTMEISTER wordmark.
+   Font size scales with viewport width (11.5vw) but is locked
+   between 44px and 92px thanks to clamp(). */
+.title{
+  font-family: var(--f-display);
+  font-weight: 900;
+  font-size: clamp(44px, 11.5vw, 92px);
+  line-height: .95;           /* very tight leading = solid block of type */
+  letter-spacing: -.01em;     /* tiny negative tracking = denser look     */
+  text-transform: uppercase;
+  text-align: center;
+  display: inline-block;      /* shrink-wraps the text so flex centring works */
+}
+
+/* "Hollow" letters: paper-coloured fill with an ink outline,
+   like un-inked type.
+   • -webkit-text-stroke draws the outline
+   • paint-order:stroke draws the stroke BEHIND the fill so it
+     doesn't eat into the letterforms */
+.title .hollow{
+  color: var(--paper);
+  -webkit-text-stroke: 2.5px var(--ink);
+  paint-order: stroke;
+}
+
+/* The full stop after the title is stamped in red. */
+.title .period{
+  color: var(--red);
+  font-style: normal;
+}
+
+/* ------------------------------------------------------------
+   ANIMATED DEMO TILES
+   A miniature row of tiles under the title that endlessly
+   "stamps" letters in — a live preview of how the game plays.
+   ------------------------------------------------------------ */
+
+/* Outer clip box: hides tiles if the row is ever too wide and
+   provides horizontal breathing room. */
+.demo-container {
+  width: 100%;
+  overflow: hidden;
+  margin-top: 22px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding: 0 20px;
+}
+
+/* The row of demo tiles itself.
+   --tile sets the tile WIDTH; every other dimension (height,
+   font-size) is derived from it with calc(), so changing this
+   one variable re-sizes the whole tile proportionally. */
+.demo {
+  display: flex;
+  gap: 6px;
+  margin: 0 auto;
+  --tile: clamp(27px, 7vw, 38px);   /* fluid tile size */
+  overflow: hidden;
+  justify-content: center;
+  max-width: 100%;
+  padding: 0;
+}
+
+/* A single demo tile: bordered square with a hard offset
+   shadow (zero blur) — the signature letterpress look. */
+.demo .tile{
+  width: var(--tile);
+  height: calc(var(--tile) * 1.24);    /* slightly taller than wide, like a real tile */
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);    /* hard shadow: x-offset y-offset blur(=0) colour */
+  display: grid;
+  place-items: center;                 /* centre the letter on both axes */
+  font-family: var(--f-display);
+  font-weight: 900;
+  font-size: calc(var(--tile) * 0.56); /* letter = 56% of tile width */
+  line-height: 1;
+  user-select: none;                   /* tiles can't be accidentally highlighted */
+  -webkit-user-select: none;           /* Safari equivalent */
+  position: relative;
+  flex-shrink: 1;                      /* ALLOWED to shrink on tiny screens (unlike game tiles) */
+  min-width: 0;                        /* required so flex items may shrink below content size */
+}
+
+/* "Fixed" tiles are pre-stamped: ink background, paper letter. */
+.demo .tile.fixed{
+  background:var(--ink);
+  color:var(--paper);
+}
+
+/* Two fixed tiles get a slight rotation for a hand-stamped feel.
+   :nth-child(n) picks the 2nd and 7th tile in the row. */
+.demo .tile.fixed:nth-child(2){
+  transform: rotate(-2deg);
+}
+
+.demo .tile.fixed:nth-child(7){
+  transform: rotate(1.8deg);
+}
+
+/* Animated tiles run the demoStamp loop forever. Each tile's
+   delay is staggered by its --i custom property (set from JS
+   as an inline style), so letters stamp in one after another. */
+.demo .tile.anim{
+  animation: demoStamp 7.5s linear infinite;
+  animation-delay: calc(var(--i) * 1.05s);
+}
+
+/* One full 7.5-second cycle for a single tile:
+   0–5%    blank paper, letter invisible
+   8–12%   letter swells to 1.28× (the press coming down)
+   15–62%  stamped! ink background, paper letter, slight tilt
+   68–100% fades back to blank, ready for the next loop */
+@keyframes demoStamp{
+  0%, 5%   { background:var(--paper); color:transparent; transform:scale(1); }
+  8%, 12%  { background:var(--paper); color:transparent; transform:scale(1.28); }
+  15%, 62% { background:var(--ink); color:var(--paper); transform:scale(1) rotate(-1.6deg); }
+  68%, 100%{ background:var(--paper); color:transparent; transform:scale(1); }
+}
+
+/* Intro paragraph under the demo.
+   max-width:44ch caps line length at ~44 characters — a
+   comfortable measure for reading. */
+
+#screen-start .lede{
+  margin-top:20px;
+  margin-inline: auto;
+  max-width:44ch;
+  font-size: clamp(14.5px, 2.6vw, 16.5px);
+  line-height:1.55;
+  color:var(--ink-70);
+  font-weight:500;
+  text-align: center !important;  /* Force override */
+  letter-spacing: 0.02em;
+  padding: 0 10px;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
+
+/* Difficulty-picker block. */
+.picker{
+  margin-top: clamp(28px, 5.5vh, 48px);
+}
+
+/* "CHOOSE YOUR CHALLENGE" style label. */
+.picker-label{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--ink-70);
+}
+
+/* A horizontal rule that grows to fill the leftover row space.
+   content:'' is required — pseudo-elements won't render
+   without it, even when empty. */
+.picker-label::after{
+  content:'';
+  flex:1;
+  height:2px;
+  background: var(--ink-25);
+}
+
+/* Vertical stack of difficulty option cards. */
+.opts{
+  display:grid;
+  gap:12px;
+  margin-top:16px;
+}
+
+/* One clickable difficulty card — same hard-shadow letterpress
+   styling as the tiles. The long transition list makes every
+   state change (hover/press) feel smooth. */
+.opt{
+  display:flex;
+  align-items:center;
+  gap: clamp(12px,3vw,20px);
+  padding: 13px clamp(14px,3.5vw,20px);
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor:pointer;
+  text-align:left;
+  transition: transform .13s ease, box-shadow .13s ease, background-color .13s ease, color .13s ease;
+}
+
+/* Hover: colours invert (ink card, paper text) and the card
+   lifts up-left while its shadow grows — feels "raised". */
+.opt:hover{
+  background: var(--ink);
+  color: var(--paper);
+  transform: translate(-2px,-2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+/* Active (mouse down): the card is "pressed" — it moves
+   down-right and the shadow collapses to nothing. */
+.opt:active{
+  transform: translate(2px,2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* Dashed red outline shown only for KEYBOARD navigation
+   (:focus-visible ignores mouse clicks) — accessibility win. */
+.opt:focus-visible{
+  outline: 2px dashed var(--red);
+  outline-offset: 3px;
+}
+
+/* Big decorative number (3 / 5 / 6) on the left of each card. */
+.opt-num{
+  font-family: var(--f-display);
+  font-weight:900;
+  font-size: clamp(34px, 7vw, 46px);
+  line-height:1;
+  min-width: 1.15em;      /* keeps numbers of different widths aligned */
+  text-align:center;
+}
+
+/* Right-hand column: title + subtitle.
+   min-width:0 lets the text shrink/wrap instead of overflowing. */
+.opt-info{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  min-width:0;
+}
+
+.opt-title{
+  font-weight:700;
+  font-size:13px;
+  letter-spacing:.16em;
+}
+
+.opt-sub{
+  font-size:12.5px;
+  color: var(--ink-70);
+  font-weight:500;
+}
+
+/* On hover the card turns ink-dark, so the subtitle switches
+   to a paper-tinted colour to stay readable. */
+.opt:hover .opt-sub{
+  color: rgba(242,236,223,.72);   /* that's --paper at 72% */
+}
+
+/* Miniature tile preview on the right of each card. */
+.opt-preview{
+  display:flex;
+  gap:3px;
+}
+
+/* Little empty tile outlines. currentColor = the element's own
+   text colour, so the outlines automatically match the hover
+   state without extra rules. */
+.opt-preview i{
+  width:10px;
+  height:14px;
+  border:1.5px solid currentColor;
+  opacity:.9;
+}
+
+/* The ".f" tile is filled red = the pre-revealed letter. */
+.opt-preview i.f{
+  background: var(--red);
+  border-color: var(--red);
+}
+
+/* Arrow icon container + size. flex:none stops it squashing. */
+.opt-arrow{
+  flex:none;
+  display:grid;
+  place-items:center;
+}
+
+.opt-arrow svg{
+  width:18px;
+  height:18px;
+}
+
+/* "Feeling lucky?" text-only button under the cards. */
+.random-btn{
+  margin: 20px auto 0;
+  display:block;
+  background:none;
+  border:none;
+  cursor:pointer;
+  font-size:14px;
+  font-weight:500;
+  color: var(--ink-70);
+}
+
+/* The word "randomise" inside is red, underlined, with the
+   underline pushed 4px below the text for elegance. */
+.random-btn span{
+  color: var(--red);
+  font-weight:700;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.random-btn:hover span{
+  text-decoration-thickness: 3px;   /* underline thickens on hover */
+}
+
+/* Small muted footer line at the bottom of the start screen. */
+.start-foot{
+  margin-top: clamp(26px, 6vh, 52px);
+  text-align:center;
+  font-size:12.5px;
+  color: var(--ink-45);
+  font-weight:500;
+}
+
+
+/* ============================================================
+   6. SHARED COMPONENTS
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   LETTER TILE (the real game-board version)
+   Same recipe as the demo tiles, but larger by default (62px)
+   and NOT allowed to shrink (flex-shrink:0) — the board row
+   handles its own overflow instead.
+   ------------------------------------------------------------ */
+.tile{
+  --tile: 62px;                          /* default width; long words override this */
+  width: var(--tile);
+  height: calc(var(--tile) * 1.24);
+  border: 2.5px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  display: grid;
+  place-items: center;
+  font-family: var(--f-display);
+  font-weight: 900;
+  font-size: calc(var(--tile) * var(--tile-font-ratio));  /* 56% of tile width */
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;                    /* anchor for any absolutely-positioned children */
+  flex-shrink: 0;                        /* never squashed by flexbox */
+}
+
+/* Nudge the glyph down a hair for optical (visual) centring. */
+.tile .letter{
+  transform: translateY(1%);
+}
+
+/* Revealed tile = stamped: inverts to ink/paper and plays the
+   stampIn animation (a big press slamming down). */
+.tile.revealed{
+  background: var(--ink);
+  color: var(--paper);
+  animation: stampIn .55s cubic-bezier(.3,.9,.35,1.25) both;
+}
+
+/* The stamp animation, step by step:
+   0%   blank paper, invisible letter, normal size
+   30%  letter swells to 1.42× (press descending), optional tilt
+   55%  ink slams in, letter visible, squashed to 0.9×
+   75%  springy overshoot to 1.06×
+   100% rests at normal size, fully stamped
+   --tilt is a per-tile random rotation (set from JS) so every
+   stamp lands at a slightly different angle. */
+@keyframes stampIn{
+  0%   { background:var(--paper); color:transparent; transform:scale(1); }
+  30%  { background:var(--paper); color:transparent; transform:scale(1.42) rotate(var(--tilt,0deg)); }
+  55%  { background:var(--ink); color:var(--paper); transform:scale(.9) rotate(var(--tilt,0deg)); }
+  75%  { transform:scale(1.06) rotate(var(--tilt,0deg)); }
+  100% { background:var(--ink); color:var(--paper); transform:scale(1) rotate(var(--tilt,0deg)); }
+}
+
+/* A wrong-guess tile: red border/letter/shadow, pops in. */
+.tile.miss{
+  border-color: var(--red);
+  color: var(--red);
+  box-shadow: 3px 3px 0 var(--red);
+  animation: missIn .35s ease both;
+}
+
+@keyframes missIn{
+  from{ opacity:0; transform:scale(.6) rotate(-3deg); }
+  to{ opacity:1; transform:scale(1) rotate(0deg); }
+}
+
+/* Celebration hop for tiles (used on a win). */
+.tile.bounce{
+  animation: bounce .6s cubic-bezier(.3,.6,.35,1.3) both;
+}
+
+@keyframes bounce{
+  0%{ transform: translateY(0) scale(1) rotate(var(--tilt,0deg)); }
+  35%{ transform: translateY(-16px) scale(1.04) rotate(var(--tilt,0deg)); }  /* jump up   */
+  70%{ transform: translateY(3px) scale(.99) rotate(var(--tilt,0deg)); }     /* land hard */
+  100%{ transform: translateY(0) scale(1) rotate(var(--tilt,0deg)); }        /* settle    */
+}
+
+/* ------------------------------------------------------------
+   BUTTONS
+   ------------------------------------------------------------ */
+
+/* Standard rectangular button, letterpress style. */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  gap:9px;
+  padding: 12px 18px;
+  border:2px solid var(--ink);
+  background:var(--paper);
+  color:var(--ink);
+  font-weight:700;
+  font-size:13px;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor:pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background-color .12s ease, color .12s ease;
+}
+
+.btn svg{
+  width:16px;
+  height:16px;
+}
+
+/* Hover: lift up-left, shadow grows. */
+.btn:hover{
+  transform: translate(-1px,-1px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+/* Press: sink down-right, shadow gone. */
+.btn:active{
+  transform: translate(2px,2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* Keyboard-only focus ring (accessibility). */
+.btn:focus-visible{
+  outline:2px dashed var(--red);
+  outline-offset:3px;
+}
+
+/* Solid-ink variant for primary actions ("PLAY AGAIN" etc.). */
+.btn-primary{
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Disabled: faded, unclickable, softer shadow. */
+.btn:disabled{
+  opacity:.35;
+  pointer-events:none;             /* clicks pass through entirely */
+  box-shadow: 2px 2px 0 var(--ink-25);
+}
+
+/* Small square button holding just an icon (e.g. back arrow). */
+.icon-btn{
+  width:40px;
+  height:40px;
+  flex:none;
+  display:grid;
+  place-items:center;
+  border:2px solid var(--ink);
+  background:var(--paper);
+  box-shadow: 2.5px 2.5px 0 var(--ink);
+  cursor:pointer;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.icon-btn svg{
+  width:18px;
+  height:18px;
+}
+
+.icon-btn:active{
+  transform: translate(2px,2px);
+  box-shadow:0 0 0 var(--ink);
+}
+
+.icon-btn:focus-visible{
+  outline:2px dashed var(--red);
+  outline-offset:3px;
+}
+
+
+/* ============================================================
+   7. GAME SCREEN
+   ============================================================ */
+
+/* Full-height column, max 780px, centred.
+   The bottom padding adds env(safe-area-inset-bottom) so
+   content clears the iPhone home-indicator bar. */
+#screen-game{
+  width:100%;
+  max-width: 780px;
+  margin-inline:auto;
+  padding: 14px clamp(10px, 3vw, 28px) calc(14px + env(safe-area-inset-bottom));
+  gap: 8px;
+}
+
+/* Top bar: [back button] [wordmark] … [chips]. */
+.topbar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+/* Small logo text in the display serif. */
+.wordmark{
+  font-family:var(--f-display);
+  font-weight:900;
+  font-size:16px;
+  letter-spacing:.05em;
+}
+
+/* margin-left:auto pushes this group to the far right. */
+.top-right{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+/* Rectangular info chip (e.g. "LEVEL 1"). */
+.chip{
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.14em;
+  border:2px solid var(--ink);
+  padding:8px 11px;
+  background:var(--paper);
+  white-space:nowrap;      /* never wrap onto two lines */
+}
+
+/* A <b> inside a chip is highlighted red (e.g. the number). */
+.chip b{
+  color: var(--red);
+  margin-left:2px;
+}
+
+/* Row between top bar and board: badge on the left,
+   tries-counter on the right. */
+.status{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:2px;
+}
+
+/* Solid-ink label (e.g. the puzzle number). */
+.badge{
+  background:var(--ink);
+  color:var(--paper);
+  font-size:11px;
+  font-weight:700;
+  letter-spacing:.18em;
+  padding:8px 11px;
+}
+
+/* "TRIES" counter group. */
+.tries{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.tries-label{
+  font-size:10.5px;
+  font-weight:700;
+  letter-spacing:.18em;
+  color:var(--ink-70);
+}
+
+/* Row of dots — one per allowed try. */
+.dots{
+  display:flex;
+  gap:7px;
+}
+
+/* A dot = filled ink circle. */
+.dot{
+  width:15px;
+  height:15px;
+  border-radius:50%;
+  background:var(--ink);
+  border:2px solid var(--ink);
+  position:relative;       /* anchor for the ✗ pseudo-elements */
+}
+
+/* A used-up try: hollow dot with a red border… */
+.dot.used{
+  background:var(--paper);
+  border-color:var(--red);
+}
+
+/* …and a red ✗ drawn from two crossed bars:
+   ::before rotated +45°, ::after rotated −45°.
+   Both are centred with left/top 50% + translate(-50%,-50%). */
+.dot.used::before,
+.dot.used::after{
+  content:'';
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:11px;
+  height:2.4px;
+  background:var(--red);
+  transform: translate(-50%,-50%) rotate(45deg);
+}
+
+.dot.used::after{
+  transform: translate(-50%,-50%) rotate(-45deg);
+}
+
+/* The central play area.
+   • flex:1 absorbs all leftover vertical space, which keeps
+     the keyboard pinned to the bottom of the screen.
+   • container-type:inline-size turns .stage into a QUERY
+     CONTAINER — this enables the @container rules further down,
+     which resize tiles based on the STAGE's width rather than
+     the whole browser window (more accurate on odd layouts). */
+.stage{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding: 12px 0;
+  min-height: 180px;
+  width:100%;
+  container-type: inline-size;
+}
+
+/* Clip box around the tile row: hides overflow and anchors
+   the "thud" shake effect (position:relative). */
+.tiles-wrap{
+  width:100%;
+  overflow: hidden;
+  position:relative;
+}
+
+/* The tile row itself. Scrolls horizontally if the word is too
+   wide to fit. Firefox scrollbar styling here (thumb colour,
+   track colour); the WebKit equivalent lives near the file end. */
+.tiles{
+  display:flex;
+  gap: clamp(4px, 1.2vw, 8px);
+  justify-content: center;
+  min-width:0;
+  width:100%;
+  overflow-x:auto;
+  scrollbar-width:thin;
+  scrollbar-color:var(--ink) var(--paper);
+  padding-bottom:8px;
+  margin:0 auto;
+  max-width:100%;
+}
+
+/* ------------------------------------------------------------
+   LONG WORD OVERRIDES
+   JS adds a .long-word class for words of 7+ letters; these
+   rules shrink tiles and gaps so they fit without scrolling.
+   Three breakpoints progressively shrink things further.
+   ------------------------------------------------------------ */
+.tiles.long-word {
+  gap: 2px;
+  padding: 0 10px;
+}
+
+.tiles.long-word .tile {
+  --tile: clamp(20px, 4vw, 30px);   /* smaller fluid tile size */
+  font-size: calc(var(--tile) * 0.6);
+}
+
+@media (max-width: 600px) {
+  .tiles.long-word .tile {
+    --tile: clamp(18px, 3.5vw, 26px);   /* even smaller on phones */
+  }
+}
+
+@media (max-width: 400px) {
+  .tiles.long-word .tile {
+    --tile: 16px;      /* hard minimum on very small phones */
+    font-size: 10px;
+  }
+  .tiles.long-word {
+    gap: 1px;
+    padding: 0 5px;
+  }
+}
+
+/* One-line feedback under the tiles ("Not a word", "2 left"…).
+   min-height reserves vertical space so the layout doesn't
+   jump when the message appears or disappears. */
+.message{
+  min-height:22px;
+  font-size:14.5px;
+  font-weight:500;
+  text-align:center;
+  transition: opacity .2s, transform .2s;
+}
+
+.message.good{
+  color:var(--ink);
+  font-weight:700;
+}
+
+.message.bad{
+  color:var(--red);
+  font-weight:700;
+}
+
+/* Quick fade-up when the message text changes. */
+.message.pop{
+  animation: msgIn .25s ease;
+}
+
+@keyframes msgIn{
+  from{ opacity:0; transform: translateY(4px); }
+}
+
+/* ------------------------------------------------------------
+   RESULT STAMP
+   The big rotated "WIN!" / "MISS" stamp slapped over the board.
+   • mix-blend-mode:multiply lets the paper grain show through,
+     like real ink soaked into paper
+   • translate(-50%,-50%) centres it, then rotate(-7deg) tilts
+     it like a hand-applied stamp
+   ------------------------------------------------------------ */
+.stamp{
+  position:absolute;
+  left:50%;
+  top:50%;
+  z-index:5;
+  transform: translate(-50%,-50%) rotate(-7deg);
+  font-family:var(--f-display);
+  font-weight:900;
+  font-size: clamp(30px, 8vw, 54px);
+  letter-spacing:.04em;
+  padding: 6px 18px 10px;
+  border: 4px solid currentColor;          /* border matches the text colour */
+  background: rgba(242,236,223,.92);       /* paper at 92% opacity */
+  mix-blend-mode: multiply;
+}
+
+/* Small uppercase sub-line inside the stamp. */
+.stamp .stamp-sub{
+  display:block;
+  font:700 10px var(--f-ui);   /* shorthand: weight size family */
+  letter-spacing:.3em;
+  margin-top:2px;
+}
+
+.stamp.win{
+  color: var(--red);
+}
+
+.stamp.lose{
+  color: var(--ink);
+}
+
+/* Space reserved below the board for the result card, so the
+   layout doesn't shift when it appears. */
+.below{
+  min-height: 148px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 4px 0;
+}
+
+/* The end-of-round card: answer word + hint + buttons. */
+.result{
+  border:2px solid var(--ink);
+  background:var(--paper-2);
+  box-shadow:4px 4px 0 var(--ink);
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  align-items:center;
+  animation: riseIn .35s ease both;
+}
+
+@keyframes riseIn{
+  from{ opacity:0; transform: translateY(10px); }
+}
+
+/* The answer word, big serif. */
+.result-word{
+  font-family:var(--f-display);
+  font-weight:900;
+  font-size: clamp(20px,5vw,26px);
+}
+
+/* The letters the player guessed are highlighted red italic. */
+.result-word em{
+  color:var(--red);
+  font-style:italic;
+}
+
+/* Definition / hint line. */
+.result-sub{
+  font-size:13px;
+  color:var(--ink-70);
+}
+
+/* Button row — wraps onto multiple lines on narrow screens. */
+.result-actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+
+/* ------------------------------------------------------------
+   ON-SCREEN KEYBOARD
+   ------------------------------------------------------------ */
+.keyboard{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-top:auto;     /* pushes the keyboard to the bottom of the flex column */
+  padding-top:6px;
+}
+
+/* Each row of keys is centred and capped at 600px wide. */
+.kb-row{
+  display:flex;
+  justify-content:center;
+  gap: clamp(4px,1.2vw,7px);
+  max-width: 600px;
+  width:100%;
+  margin-inline:auto;
+}
+
+/* A single key.
+   flex: 0 1 clamp(...) breaks down as:
+     flex-grow:0   → never wider than its basis
+     flex-shrink:1 → MAY shrink if the row overflows
+     flex-basis:   → fluid ideal width between 26–52px
+   touch-action:manipulation removes the double-tap-zoom delay
+   on mobile; -webkit-tap-highlight-color removes the grey tap
+   flash on Android/Safari. */
+.key{
+  flex: 0 1 clamp(26px, 8vw, 52px);
+  height: clamp(44px, 11vw, 56px);
+  border:2px solid var(--ink);
+  background:var(--paper);
+  color:var(--ink);
+  font:600 clamp(13px,3.4vw,16px) var(--f-ui);   /* weight size family */
+  text-transform:uppercase;
+  box-shadow: 2.5px 2.5px 0 var(--ink);
+  cursor:pointer;
+  display:grid;
+  place-items:center;
+  user-select:none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform .08s, box-shadow .08s, background .15s, color .15s;
+  border-radius:0;     /* square corners — part of the aesthetic */
+  padding:0;
+}
+
+/* Pressed key: physically "pressed" into the page.
+   :disabled keys are excluded so dead keys don't react. */
+.key:active:not(:disabled){
+  transform: translate(2px,2px);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* Correct letter: inverts to ink/paper with a quick pulse. */
+.key.hit{
+  background:var(--ink);
+  color:var(--paper);
+  animation: keyHit .25s ease;
+}
+
+@keyframes keyHit{
+  50%{ transform: scale(1.12); }
+}
+
+/* Wrong letter: faded, no shadow, transparent background, with
+   a red ✗ drawn by two crossed pseudo-element bars (same trick
+   as the tries-dots above).
+   NOTE: --ink-30 is referenced here but never defined in :root.
+   The browser treats it as unset, so those colours fall back to
+   inheritance. Consider defining --ink-30 or using --ink-45. */
+.key.miss{
+  color: var(--ink-30);
+  border-color: var(--ink-30);
+  box-shadow:none;
+  background:transparent;
+  position:relative;
+}
+
+.key.miss::before,
+.key.miss::after{
+  content:'';
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:120%;              /* slightly wider than the key */
+  height:2px;
+  background:var(--red);
+  transform:translate(-50%,-50%) rotate(45deg);
+}
+
+.key.miss::after{
+  transform:translate(-50%,-50%) rotate(-45deg);
+}
+
+/* Second .key.miss block: adds the entrance animation
+   (both blocks' declarations combine). */
+.key.miss{
+  animation: keyMiss .3s both;
+}
+
+@keyframes keyMiss{
+  0%{ transform: scale(1.15); }
+}
+
+
+/* ============================================================
+   8. ONE-OFF EFFECT ANIMATIONS
+   ------------------------------------------------------------
+   These classes are added/removed by JavaScript to react to
+   game events (wrong answer, letter submitted, win, …).
+   ============================================================ */
+
+/* Whole tile row shakes left-right (wrong answer). */
+.tiles.shake{
+  animation: shakeX .5s both;
+}
+
+@keyframes shakeX{
+  10%,90%{ transform:translateX(-2px); }
+  20%,80%{ transform:translateX(4px) rotate(.4deg); }
+  30%,50%,70%{ transform:translateX(-8px) rotate(-.5deg); }
+  40%,60%{ transform:translateX(8px) rotate(.5deg); }
+}
+
+/* Board does a little downward "thud" when a letter is
+   submitted. The second time value (.15s) is a DELAY. */
+.tiles-wrap.thud{
+  animation: thud .25s .15s both;
+}
+
+@keyframes thud{
+  0%,100%{transform:none}
+  30%{ transform: translateY(3px) scale(.99);}   /* dip down  */
+  60%{ transform: translateY(-1px);}             /* bounce up */
+}
+
+/* Used tries-dot pops in with a springy overshoot (the
+   cubic-bezier values >1 create the overshoot). */
+.dot.used{
+  animation: dotPop .35s cubic-bezier(.2,.9,.3,1.4) both;
+}
+
+@keyframes dotPop{
+  0%{ transform:scale(1.6);}
+  60%{ transform:scale(.85);}
+  100%{ transform:scale(1);}
+}
+
+/* Key wiggles horizontally (e.g. "already guessed"). */
+.key.nudge{
+  animation: nudge .25s ease;
+}
+
+@keyframes nudge{
+  25%{ transform: translateX(-3px);}
+  75%{ transform: translateX(3px);}
+}
+
+/* Win confetti: small rectangles created by JS. Their travel
+   distance (--dx, --dy) and spin (--rot) are random per piece,
+   set as inline custom properties. */
+.confetti{
+  position:absolute;
+  width:7px;
+  height:11px;
+  z-index:6;
+  pointer-events:none;
+  animation: confettiFall 1.2s cubic-bezier(.2,.6,.3,1) forwards;
+}
+
+@keyframes confettiFall{
+  0%{ opacity:1; transform: translate(0,0) rotate(0deg); }
+  100%{ opacity:0; transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); }
+}
+
+
+/* ============================================================
+   9. RESPONSIVE RULES
+   ============================================================ */
+
+/* Very narrow phones (<360px): hide the wordmark, shrink the
+   title and option numbers, reduce reserved heights. */
+@media (max-width: 359px){
+  .wordmark{ display:none; }
+  .title{ font-size: clamp(36px, 10vw, 72px); }
+  .opt-num{ font-size: clamp(28px, 6.5vw, 40px); }
+  .stage{ min-height: 140px; }
+  .below{ min-height: 120px; }
+}
+
+/* Short viewports (e.g. landscape phones): compress the
+   reserved vertical space so everything still fits. */
+@media (max-height: 640px){
+  .stage{ min-height: 120px; }
+  .below{ min-height: 110px; }
+}
+
+/* ACCESSIBILITY: users who ask their OS for "reduced motion"
+   get all animations/transitions effectively switched off
+   (0.01ms). !important overrides every other animation or
+   transition declaration anywhere in the file. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+}
+
+/* ------------------------------------------------------------
+   CONTAINER QUERIES
+   .stage was declared container-type:inline-size, so these
+   rules fire based on the STAGE's width — not the window's.
+   Tiles shrink as the play area narrows.
+   ------------------------------------------------------------ */
+@container (max-width: 600px) {
+  .tile {
+    --tile: clamp(30px, 5vw, 50px);
+    font-size: calc(var(--tile) * 0.6);
+  }
+}
+
+@container (max-width: 400px) {
+  .tile {
+    --tile: clamp(24px, 4.5vw, 40px);
+    font-size: calc(var(--tile) * 0.65);
+  }
+  .tiles {
+    gap: 3px;
+  }
+}
+
+/* Small phones: tighten stage padding and tile gaps. */
+@media (max-width: 500px) {
+  .stage {
+    padding: 8px 0;
+  }
+  .tiles {
+    gap: 2px;
+    padding-bottom: 6px;
+  }
+}
+
+/* Demo tiles on small phones: smaller tiles, tighter gaps,
+   and allow tiles to shrink. */
+@media (max-width: 400px) {
+  .demo {
+    gap: 4px;
+    --tile: clamp(18px, 5vw, 24px);
+    padding: 0;
+  }
+  .demo .tile {
+    font-size: calc(var(--tile) * 0.6);
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  .demo .tile.fixed {
+    font-size: calc(var(--tile) * 0.7);
+  }
+  .demo-container {
+    padding: 0 15px;
+  }
+}
+
+/* Specific iPhone-class widths: hard-coded minimum demo sizes
+   (clamp() can't go low enough here). */
+@media (max-width: 375px) {
+  .demo {
+    gap: 3px;
+    --tile: 18px;
+  }
+  .demo .tile {
+    font-size: 12px;
+    height: 24px;
+  }
+  .demo .tile.fixed {
+    font-size: 14px;
+  }
+  .demo-container {
+    padding: 0 10px;
+  }
+}
+
+/* Title on small phones: smaller size + thinner outline stroke
+   so the hollow letters stay legible. */
+@media (max-width: 400px) {
+  .title {
+    font-size: clamp(32px, 10vw, 60px);
+    letter-spacing: -.02em;
+  }
+  .title .hollow {
+    -webkit-text-stroke-width: 1.5px;
+  }
+}
+
+/* Title container: slightly tighter spacing on small phones.
+   (The base .title-container rule is also re-declared at the
+   bottom of the file — see the "late overrides" note there.) */
+.title-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+}
+
+@media (max-width: 400px) {
+  .title-container {
+    margin-top: 10px;
+  }
+}
+
+/* WebKit (Chrome/Safari/Edge) scrollbar styling for the tile
+   row — pairs with the Firefox syntax (scrollbar-width /
+   scrollbar-color) set on .tiles earlier. */
+.tiles::-webkit-scrollbar {
+  height: 6px;
+}
+.tiles::-webkit-scrollbar-track {
+  background: var(--paper);
+}
+.tiles::-webkit-scrollbar-thumb {
+  background: var(--ink);
+  border-radius: 3px;
+}
+
+/* ------------------------------------------------------------
+   LATE OVERRIDES / DUPLICATES
+   The blocks below re-declare selectors that appear earlier.
+   When specificity is equal, the LAST rule wins, so these
+   effectively amend the originals. They could be merged into
+   the earlier rules to slim the file down.
+   ------------------------------------------------------------ */
+
+/* Duplicate of .demo-container above (identical values). */
+.demo-container {
+  width: 100%;
+  overflow: hidden;
+  margin-top: 22px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 400px) {
+  .demo-container {
+    margin-top: 16px;
+  }
+}
+
+/* Re-declaration of .picker-label: adds justify-content:center
+   and — importantly — a ::before line. The label now has a
+   rule on BOTH sides (each capped at 100px wide), overriding
+   the single-sided ::after rule from earlier. */
+.picker-label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-70);
+  justify-content: center;
+}
+
+.picker-label::before,
+.picker-label::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--ink-25);
+  max-width: 100px;
+}
