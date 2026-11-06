@@ -39,7 +39,7 @@ everything. Every revealed letter lands with a satisfying "stamp" animation and 
 ## Features
 
 - **Five difficulty levels** — words of 5, 6, 7, 8+ (up to 14) letters, plus a random option
-- **500+ curated Spanish nouns** with English translations, revealed after each round
+- **2600+ curated Spanish nouns** with English translations, revealed after each round
 - **Full Spanish keyboard support** — on-screen keys include Ñ and the accented vowels Á É Í Ó Ú
 - **Physical keyboard input** — type directly on a QWERTY keyboard; accents and Ñ included
 - **Score streak system** — winning extends your streak, losing resets it; best streak is saved
